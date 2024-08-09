@@ -11,7 +11,7 @@ COMMAND=$@
 START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # POST start time
-curl -X POST -d "${NAME},${START_TIME}" http://localhost:8080/track_start
+curl -X POST -d "${NAME},${START_TIME}" localhost:8080/track_start
 
 # Execute the command and capture its exit status
 eval "$COMMAND"
@@ -21,7 +21,7 @@ STATUS=$?
 END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # POST end time
-curl -X POST -d "${NAME},${END_TIME}" http://localhost:8080/track_end
+curl -X POST -d "${NAME},${END_TIME}" localhost:8080/track_end
 
 # Exit with the status of the command
 exit $STATUS

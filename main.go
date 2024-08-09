@@ -4,22 +4,29 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 )
 
 type PersonActivity struct {
-	Name     string
+	Name          string
 	DurationTotal time.Duration
-	WorkingTime time.Time
+	WorkingTime   time.Time
 }
 
 var (
 	activities = make(map[string]PersonActivity)
 	mu         sync.Mutex
 )
+
+func fmtDuration(d time.Duration) string {
+    d = d.Round(time.Minute)
+    h := d / time.Hour
+    d -= h * time.Hour
+    m := d / time.Minute
+    return fmt.Sprintf("%02d:%02d", h, m)
+}
 
 func trackEND_Handler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -30,7 +37,7 @@ func trackEND_Handler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	params := bytes.Split(body, []byte(","))
-	if len(params) < 3 {
+	if len(params) < 2 {
 		http.Error(w, "Expected format: name,time_end", http.StatusBadRequest)
 		return
 	}
@@ -38,7 +45,7 @@ func trackEND_Handler(w http.ResponseWriter, r *http.Request) {
 	name := string(params[0])
 	endTime, err := time.Parse(time.RFC3339, string(params[1]))
 	if err != nil {
-		http.Error(w, "Invalid start time format", http.StatusBadRequest)
+		http.Error(w, "Invalid end time format", http.StatusBadRequest)
 		return
 	}
 
@@ -46,18 +53,21 @@ func trackEND_Handler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	if activity, exists := activities[name]; exists {
-		activities[name] = activity
-		
 		if activity.WorkingTime.IsZero() {
-			log.Panic("the user didnt start to work")
-		} else {
-			activity.DurationTotal = endTime.Sub(activity.WorkingTime)
+			http.Error(w, "User did not start working", http.StatusBadRequest)
+			return
 		}
-	} else {
-		log.Panic("the activity does not exists")
-	}
+		duration := endTime.Sub(activity.WorkingTime)
+		
+		activity.DurationTotal += duration
+		activity.WorkingTime = time.Time{}
+		activities[name] = activity
 
-	fmt.Fprintf(w, "Time tracked for %s: %v\n", name, activities[name].DurationTotal)
+		
+		fmt.Fprintf(w, "Time tracked for %s: %v\n", name, fmtDuration(duration))
+	} else {
+		http.Error(w, "Activity does not exist", http.StatusBadRequest)
+	}
 }
 
 func trackSTART_Handler(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +79,7 @@ func trackSTART_Handler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	params := bytes.Split(body, []byte(","))
-	if len(params) < 3 {
+	if len(params) < 2 {
 		http.Error(w, "Expected format: name,start_time", http.StatusBadRequest)
 		return
 	}
@@ -85,20 +95,20 @@ func trackSTART_Handler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	if activity, exists := activities[name]; exists {
-		activities[name] = activity
 		if activity.WorkingTime.IsZero() {
 			activity.WorkingTime = startTime
+			activities[name] = activity
+			fmt.Fprintf(w, "Work started for %s at %v\n", name, startTime)
 		} else {
-			log.Panic("the user is already working")
+			http.Error(w, "User is already working", http.StatusBadRequest)
 		}
 	} else {
 		activities[name] = PersonActivity{
-			Name:     name,
+			Name:        name,
 			WorkingTime: startTime,
 		}
+		fmt.Fprintf(w, "Work started for %s at %v\n", name, startTime)
 	}
-
-	fmt.Fprintf(w, "Time tracked for %s: %v\n", name, startTime)
 }
 
 func getTimeHandler(w http.ResponseWriter, r *http.Request) {
